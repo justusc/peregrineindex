@@ -2,13 +2,10 @@
 
 enable_testing()
 
-# And compiler definitions for testing
-add_compile_definitions(-DPEREGRINE_MOCK_SYSTEM_CALLS=1)
-
-
 add_executable(
   peregrine_test
   peregrine_test.cc
+  file_test.cc
 )
 target_include_directories(
   peregrine_test

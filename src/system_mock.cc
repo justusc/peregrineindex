@@ -10,24 +10,24 @@ namespace internal {
 namespace {
 
 // Track mocked return values for system calls
-int mock_open_return_value{-1};
-int mock_open_return_count{0};
+int open_return_value{-1};
+int open_return_count{0};
 std::mutex open_mutex;
 
-int mock_close_return_value{-1};
-int mock_close_return_count{0};
+int close_return_value{-1};
+int close_return_count{0};
 std::mutex close_mutex;
 
-int mock_fstat_return_value{-1};
-int mock_fstat_return_count{0};
+int fstat_return_value{-1};
+int fstat_return_count{0};
 std::mutex fstat_mutex;
 
-void* mock_mmap_return_value{MAP_FAILED};
-int mock_mmap_return_count{0};
+void* mmap_return_value{MAP_FAILED};
+int mmap_return_count{0};
 std::mutex mmap_mutex;
 
-int mock_munmap_return_value{-1};
-int mock_munmap_return_count{0};
+int munmap_return_value{-1};
+int munmap_return_count{0};
 std::mutex munmap_mutex;
 
 StatusCode mock_status_return_value{StatusCode::ok};
@@ -68,7 +68,7 @@ int close(int fd) noexcept {
   return mock_system_call(close_mutex, close_return_value, close_return_count, ::close, fd);
 }
 
-void mock_fstat_return_value(int result, int count = 1) {
+void mock_fstat_return_value(int result, int count) {
   std::lock_guard lock(fstat_mutex);
   fstat_return_value = result;
   fstat_return_count = count;
@@ -78,7 +78,7 @@ int fstat(int fd, struct stat* buf) noexcept {
   return mock_system_call(fstat_mutex, fstat_return_value, fstat_return_count, ::fstat, fd, buf);
 }
 
-void mock_mmap_return_value(void* result = MAP_FAILED, int count = 1) {
+void mock_mmap_return_value(void* result, int count) {
   std::lock_guard lock(mmap_mutex);
   mmap_return_value = result;
   mmap_return_count = count;

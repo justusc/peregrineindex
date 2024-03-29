@@ -51,6 +51,12 @@ else()
   add_compile_definitions(-DPEREGRINE_DISABLE_SIMD=1)
 endif()
 
+# Add definitions for testing when in debug mode
+if(CMAKE_BUILD_TYPE MATCHES "Debug")
+  # And compiler definitions for testing
+  add_compile_definitions(-DPEREGRINE_MOCK_SYSTEM_CALLS=1)
+endif()
+
 # Add source code paths
 include_directories(include)
 add_subdirectory(src)
