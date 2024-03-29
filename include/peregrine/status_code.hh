@@ -3,8 +3,6 @@
 #include <errno.h>
 #include <string_view>
 
-#include "common.hh"
-
 namespace peregrine {
 
 enum StatusCode : int32_t {
@@ -260,17 +258,5 @@ enum StatusCode : int32_t {
 
 // Convert StatusCode to string
 std::string_view status_to_string(StatusCode code) noexcept;
-
-namespace internal {
-
-// Type conversion to convert StatusCode to int
-inline int status_to_int(StatusCode code) { return static_cast<int32_t>(code); }
-
-// Convert errno to StatusCode
-inline StatusCode errno_to_status(int code) {
-  return static_cast<StatusCode>(static_cast<int32_t>(code));
-}
-
-} // namespace internal
 
 } // namespace peregrine

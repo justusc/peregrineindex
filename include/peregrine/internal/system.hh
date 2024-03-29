@@ -12,6 +12,14 @@
 namespace peregrine {
 namespace internal {
 
+// Type conversion to convert StatusCode to int
+inline int status_to_int(StatusCode code) { return static_cast<int32_t>(code); }
+
+// Convert errno to StatusCode
+inline StatusCode errno_to_status(int code) {
+  return static_cast<StatusCode>(static_cast<int32_t>(code));
+}
+
 #if !defined(PEREGRINE_MOCK_SYSTEM_CALLS)
 
 // Wrapper around the `open()` system call
