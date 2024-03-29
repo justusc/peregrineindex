@@ -12,7 +12,7 @@ include(CheckCXXSourceCompiles)
 # Check for platform and add vector flags
 if(DEFINED DISABLE_SIMD AND DISABLE_SIMD)
   message(STATUS "SIMD disabled")
-  add_compile_definitions(VBYTE_DISABLE_SIMD=1)
+  add_compile_definitions(-DPEREGRINE_DISABLE_SIMD=1)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
 
   set(CMAKE_REQUIRED_FLAGS "-mfpu=neon")
@@ -20,7 +20,7 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm" OR CMAKE_SYSTEM_PROCESSOR MATCHES "a
 
   if(NOT NEON_SUPPORTED)
     message(STATUS "SIMD disabled")
-    add_compile_definitions(VBYTE_DISABLE_SIMD=1)
+    add_compile_definitions(-DPEREGRINE_DISABLE_SIMD=1)
   else()
     message(STATUS "SIMD enabled (NEON)")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfpu=neon")
@@ -43,12 +43,12 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse2")
   else()
     message(STATUS "SIMD disabled")
-    add_compile_definitions(VBYTE_DISABLE_SIMD=1)
+    add_compile_definitions(-DPEREGRINE_DISABLE_SIMD=1)
   endif()
   
 else()
   message(STATUS "SIMD disabled")
-  add_compile_definitions(VBYTE_DISABLE_SIMD=1)
+  add_compile_definitions(-DPEREGRINE_DISABLE_SIMD=1)
 endif()
 
 # Add source code paths
