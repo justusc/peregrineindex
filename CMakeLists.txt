@@ -7,6 +7,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_C_FLAGS "-Wall")
 set(CMAKE_CXX_FLAGS "-Wall")
 
+# Check for dependencies
+find_package(spdlog REQUIRED)
+
 include(CheckCXXSourceCompiles)
 
 # Check for platform and add vector flags

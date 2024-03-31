@@ -1,6 +1,8 @@
 #pragma once
 
 #include <errno.h>
+#include <fmt/format.h>
+
 #include <string_view>
 
 namespace peregrine {
@@ -260,3 +262,11 @@ enum StatusCode : int32_t {
 std::string_view status_to_string(StatusCode code) noexcept;
 
 } // namespace peregrine
+
+// Add custom spdlog for StatusCode
+template <>
+struct fmt::formatter<::peregrine::StatusCode> : fmt::formatter<std::string> {
+  auto format(::peregrine::StatusCode status, format_context& ctx) const -> decltype(ctx.out()) {
+    return format_to(ctx.out(), "[StatusCode {}]", ::peregrine::status_to_string(status));
+  }
+}; // struct fmt::formatter<StatusCode>
