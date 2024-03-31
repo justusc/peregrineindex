@@ -13,7 +13,6 @@ class MmapFile;
 // If provides a thin layer around POSIX file system calls.
 class File {
   int fd{-1};
-  struct stat st;
 
   friend class MmapFile;
 
