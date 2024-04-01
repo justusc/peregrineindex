@@ -10,48 +10,82 @@ namespace internal {
 
 class MmapFile;
 
-// File is a wrapper class around file system files.
-// If provides a thin layer around POSIX file system calls.
+/**
+ * @class File
+ * @brief Represents a file and provides operations for file handling.
+ *
+ * The File class encapsulates a file descriptor and provides methods for opening, closing, reading,
+ * writing, seeking, and duplicating files. It also provides methods for retrieving the status of
+ * the file.
+ */
 class File {
   int fd{-1};
 
   friend class MmapFile;
 
 public:
-  static constexpr int default_flags   = O_RDONLY;
+  /**
+   * @brief The default file flags for opening a file.
+   *
+   * This variable represents the default flags used when opening a file. It is set to `O_RDONLY`,
+   * which stands for "read-only". This means that by default, files opened using these flags can
+   * only be read.
+   */
+  static constexpr int default_flags = O_RDONLY;
+
+  /**
+   * @brief The `mode_t` type represents the file mode and permission bits.
+   *
+   * The `mode_t` type is used to specify the file mode and permission bits for file operations.
+   * It is an integer type that typically represents a combination of flags defined in the
+   * `sys/stat.h` header file.
+   *
+   * In this code snippet, the `default_mode` constant is defined as a `mode_t` value.
+   * It represents the default file mode and permission bits for a file.
+   * The `S_IRWXU`, `S_IRGRP`, and `S_IROTH` flags are combined using the bitwise OR operator (`|`)
+   * to set the desired permissions.
+   */
   static constexpr mode_t default_mode = S_IRWXU | S_IRGRP | S_IROTH;
 
-  // Default constructor
-  //
-  // Creates a new File object that is not associated with any file. Call `open()` to open a file.
+  /**
+   * @brief Default constructor.
+   *
+   * Creates a new File object that is not associated with any file. Call `open()` to open a file.
+   */
   File() noexcept = default;
 
   // Copy constructor (deleted)
   File(const File&) = delete;
 
-  // Move constructor
-  //
-  // Move ownership of the file to this object. `other` will be left in the default constructed
-  // state.
-  // Parameters:
-  //  - other: The File to move.
+  /**
+   * @brief Move constructor.
+   *
+   * Move ownership of the file to this object. `other` will be left in the default constructed
+   * state.
+   *
+   * @param other The File to move.
+   */
   File(File&& other) noexcept : fd(other.fd) { other.fd = -1; }
 
-  // Destructor
-  //
-  // Closes the file, if it is open.
+  /**
+   * @brief Destructor.
+   *
+   * Closes the file, if it is open.
+   */
   ~File() { close(); }
 
   // Assignment operators
   File& operator=(const File&) = delete;
 
-  // Move assignment operator
-  //
-  // Move ownership of the file to this object. If the file is already open, it is closed before
-  // moving the new file.
-  // Parameters:
-  //  - other: The File to move.
-  // Returns: A reference to the this File.
+  /**
+   * @brief Move assignment operator.
+   *
+   * Move ownership of the file to this object. If the file is already open, it is closed before
+   * moving the new file.
+   *
+   * @param other The File to move.
+   * @return A reference to the this File.
+   */
   File& operator=(File&& other) noexcept {
     close();
     fd       = other.fd;
@@ -59,13 +93,14 @@ public:
     return *this;
   }
 
-  // Open a file
-  //
-  // Parameters:
-  //  - path: The path to the file to open.
-  //  - flags: The flags to use when opening the file.
-  //  - mode: The mode to use when opening the file.
-  // Returns: `StatusCode::ok` on success, otherwise an error code.
+  /**
+   * @brief Open a file.
+   *
+   * @param path The path to the file to open.
+   * @param flags The flags to use when opening the file.
+   * @param mode The mode to use when opening the file.
+   * @return `StatusCode::ok` on success, otherwise an error code.
+   */
   StatusCode open(std::string_view path, int flags = default_flags, mode_t mode = default_mode) {
     PEREGRINE_LOG_TRACE("Opening file: path={}, flags={}, mode={}", path, flags, mode);
 
@@ -80,9 +115,11 @@ public:
     return status;
   }
 
-  // Close the file
-  //
-  // Returns: `StatusCode::ok` on success, otherwise an error code.
+  /**
+   * @brief Close the file.
+   *
+   * @return `StatusCode::ok` on success, otherwise an error code.
+   */
   StatusCode close() noexcept {
     StatusCode status = StatusCode::ok;
 
@@ -99,14 +136,19 @@ public:
     return status;
   }
 
-  // Returns true if the file is open.
+  /**
+   * @brief Check if the file is open.
+   *
+   * @return True if the file is open, false otherwise.
+   */
   bool is_open() const noexcept { return fd != -1; }
 
-  // Get the status of the file
-  //
-  // Parameters:
-  //  - buf: The buffer to store the status in.
-  // Returns: `StatusCode::ok` on success, otherwise an error code.
+  /**
+   * @brief Get the status of the file.
+   *
+   * @param buf The buffer to store the status in.
+   * @return `StatusCode::ok` on success, otherwise an error code.
+   */
   StatusCode stat(struct stat* buf) const noexcept {
     StatusCode status = StatusCode::ok;
 
@@ -117,15 +159,16 @@ public:
     return status;
   }
 
-  // Read from the file
-  //
-  // Reads up to `count` bytes from the file into `buf`. The number of bytes read may be less than
-  // `count` if the end of the file is reached.
-  // Parameters:
-  //  - buf: The buffer to read into.
-  //  - count: The number of bytes to read.
-  // Returns: A tuple containing the number of bytes read (zero indicates end of file) and a status
-  // code. The status code is `StatusCode::ok` on success, otherwise an error code.
+  /**
+   * @brief Reads data from the file into the provided buffer.
+   *
+   * Reads up to `count` bytes from the file into `buf`. The number of bytes read may be less than
+   * `count` if the end of the file is reached.
+   *
+   * @param buf Pointer to the buffer where the data will be stored.
+   * @param count Number of bytes to read.
+   * @return A tuple containing the number of bytes read and the status code.
+   */
   std::tuple<ssize_t, StatusCode> read(void* buf, size_t count) const noexcept {
     auto rc           = ::peregrine::internal::read(fd, buf, count);
     StatusCode status = StatusCode::ok;
@@ -133,45 +176,171 @@ public:
     return {rc, status};
   }
 
-  // Write to the file
-  //
-  // Writes up to `count` bytes from `buf` to the file. The number of bytes written may be less than
-  // `count` if the file system is full.
-  // Parameters:
-  //  - buf: The buffer to write from.
-  //  - count: The number of bytes to write.
-  // Returns: A tuple containing the number of bytes written and a status code. The status code is
-  // `StatusCode::ok` on success, otherwise an error code.
-  std::tuple<ssize_t, StatusCode> write(const void* buf, size_t count) const noexcept {
-    auto rc           = ::peregrine::internal::write(fd, buf, count);
+  /**
+   * @brief Reads data from a specific position in the file into the provided buffer.
+   *
+   * Reads up to `count` bytes from the file into `buf` starting at the specified `offset`.
+   * The number of bytes read may be less than `count` if the end of the file is reached.
+   *
+   * @param buf Pointer to the buffer where the data will be stored.
+   * @param count Number of bytes to read.
+   * @param offset The offset in the file to start reading from.
+   * @return A tuple containing the number of bytes read and the status code.
+   */
+  std::tuple<ssize_t, StatusCode> pread(void* buf, size_t count, off_t offset) const noexcept {
+    auto rc           = ::peregrine::internal::pread(fd, buf, count, offset);
     StatusCode status = StatusCode::ok;
     if(PEREGRINE_UNLIKELY(rc == -1)) status = errno_to_status();
     return {rc, status};
   }
 
-  // Seek to a position in the file
-  //
-  // Parameters:
-  //  - offset: The offset to seek to.
-  //  - whence: The origin of the seek.
-  // Returns: A tuple containing the new offset (or `-1` on error) and a status code. The status
-  // code is `StatusCode::ok` on success, otherwise an error code.
-  std::tuple<off_t, StatusCode> seek(off_t offset, int whence) const noexcept {
-    auto rc           = ::peregrine::internal::lseek(fd, offset, whence);
+  /**
+   * @brief Reads data from the file into multiple buffers.
+   *
+   * Reads data from the file into multiple buffers specified by `iov` starting at the specified
+   * `offset`. The total number of bytes read may be less than the sum of the sizes of the buffers
+   * if the end of the file is reached.
+   *
+   * @param iov An array of iovec structures specifying the buffers and their sizes.
+   * @param iovcnt The number of iovec structures in the array.
+   * @return A tuple containing the number of bytes read and the status code.
+   */
+  std::tuple<ssize_t, StatusCode> readv(const struct iovec* iov, int iovcnt) const noexcept {
+    auto rc           = ::peregrine::internal::readv(fd, iov, iovcnt);
+    StatusCode status = StatusCode::ok;
+    if(PEREGRINE_UNLIKELY(rc == -1)) status = errno_to_status();
+    return {rc, status};
+  }
+
+  /**
+   * @brief Reads data from multiple positions in the file into multiple buffers.
+   *
+   * Reads data from the file into multiple buffers specified by `iov` starting at the specified
+   * `offsets`. The total number of bytes read may be less than the sum of the sizes of the buffers
+   * if the end of the file is reached.
+   *
+   * @param iov An array of iovec structures specifying the buffers and their sizes.
+   * @param iovcnt The number of iovec structures in the array.
+   * @param offset The offset in the file to start reading from.
+   * @return A tuple containing the number of bytes read and the status code.
+   */
+  std::tuple<ssize_t, StatusCode> preadv(
+      const struct iovec* iov, int iovcnt, off_t offset) const noexcept {
+    auto rc           = ::peregrine::internal::preadv(fd, iov, iovcnt, offset);
+    StatusCode status = StatusCode::ok;
+    if(PEREGRINE_UNLIKELY(rc == -1)) status = errno_to_status();
+    return {rc, status};
+  }
+
+  /**
+   * @brief Writes data from the provided buffer to the file.
+   *
+   * Writes up to `count` bytes from `buf` to the file.
+   *
+   * @param buf Pointer to the buffer containing the data to write.
+   * @param count Number of bytes to write.
+   * @return A tuple containing the number of bytes written and the status code.
+   */
+  std::tuple<ssize_t, StatusCode> write(const void* buf, size_t count) const noexcept {
+    auto rc           = ::peregrine::internal::write(fd, buf, count);
     StatusCode status = StatusCode::ok;
     if(PEREGRINE_UNLIKELY(rc == -1)) {
       status = errno_to_status();
-      PEREGRINE_LOG_ERROR("Failed to seek in file : {}", status);
+      PEREGRINE_LOG_ERROR("Failed to write file : {}", status);
     }
     return {rc, status};
   }
 
-  // Duplicate the file
-  //
-  // Duplicates the file descriptor. The new file descriptor will refer to the same file as the
-  // this file.
-  // Returns: A tuple containing the new file and a status code. The status code is `StatusCode::ok`
-  // on success, otherwise an error code.
+  /**
+   * @brief Writes data from the provided buffer to a specific position in the file.
+   *
+   * Writes up to `count` bytes from `buf` to the file starting at the specified `offset`.
+   *
+   * @param buf Pointer to the buffer containing the data to write.
+   * @param count Number of bytes to write.
+   * @param offset The offset in the file to start writing from.
+   * @return A tuple containing the number of bytes written and the status code.
+   */
+  std::tuple<ssize_t, StatusCode> pwrite(
+      const void* buf, size_t count, off_t offset) const noexcept {
+    auto rc           = ::peregrine::internal::pwrite(fd, buf, count, offset);
+    StatusCode status = StatusCode::ok;
+    if(PEREGRINE_UNLIKELY(rc == -1)) {
+      status = errno_to_status();
+      PEREGRINE_LOG_ERROR("Failed to write file : {}", status);
+    }
+    return {rc, status};
+  }
+
+  /**
+   * @brief Writes data from multiple buffers to the file.
+   *
+   * Writes data from multiple buffers specified by `iov` to the file starting at the specified
+   * `offset`.
+   *
+   * @param iov An array of iovec structures specifying the buffers and their sizes.
+   * @param iovcnt The number of iovec structures in the array.
+   * @return A tuple containing the number of bytes written and the status code.
+   */
+  std::tuple<ssize_t, StatusCode> writev(const struct iovec* iov, int iovcnt) const noexcept {
+    auto rc           = ::peregrine::internal::writev(fd, iov, iovcnt);
+    StatusCode status = StatusCode::ok;
+    if(PEREGRINE_UNLIKELY(rc == -1)) {
+      status = errno_to_status();
+      PEREGRINE_LOG_ERROR("Failed to write file : {}", status);
+    }
+    return {rc, status};
+  }
+
+  /**
+   * @brief Writes data from multiple buffers to multiple positions in the file.
+   *
+   * Writes data from multiple buffers specified by `iov` to the file starting at the specified
+   * `offsets`.
+   *
+   * @param iov An array of iovec structures specifying the buffers and their sizes.
+   * @param iovcnt The number of iovec structures in the array.
+   * @param offset The offset in the file to start writing from.
+   * @return A tuple containing the number of bytes written and the status code.
+   */
+  std::tuple<ssize_t, StatusCode> pwritev(
+      const struct iovec* iov, int iovcnt, off_t offset) const noexcept {
+    auto rc           = ::peregrine::internal::pwritev(fd, iov, iovcnt, offset);
+    StatusCode status = StatusCode::ok;
+    if(PEREGRINE_UNLIKELY(rc == -1)) {
+      status = errno_to_status();
+      PEREGRINE_LOG_ERROR("Failed to write file : {}", status);
+    }
+    return {rc, status};
+  }
+
+  /**
+   * @brief Changes the file offset.
+   *
+   * Sets the file offset to the specified `offset`.
+   *
+   * @param offset The new file offset.
+   * @param whence The starting position for the offset calculation.
+   * @return The new file offset on success, otherwise -1.
+   */
+  std::tuple<off_t, StatusCode> seek(off_t offset, int whence) noexcept {
+    off_t rc          = ::peregrine::internal::lseek(fd, offset, whence);
+    StatusCode status = StatusCode::ok;
+    if(PEREGRINE_UNLIKELY(rc == -1)) {
+      auto status = errno_to_status();
+      PEREGRINE_LOG_ERROR("Failed to seek file : {}", status);
+    }
+    return {rc, status};
+  }
+
+  /** @brief Duplicate the file
+   *
+   * Duplicates the file descriptor. The new file descriptor will refer to the same file as the
+   * this file.
+   *
+   * @return A tuple containing the new file and a status code. The status code is `StatusCode::ok`
+   * on success, otherwise an error code.
+   */
   std::tuple<File, StatusCode> dup() const noexcept {
     File file;
     file.fd           = ::peregrine::internal::dup(fd);
@@ -181,6 +350,20 @@ public:
       PEREGRINE_LOG_ERROR("Failed to duplicate file : {}", status);
     }
     return {std::move(file), status};
+  }
+
+  /**
+   * @brief Flush written data to the disk.
+   *
+   * @return `StatusCode::ok` on success, otherwise an error code.
+   */
+  StatusCode flush() const noexcept {
+    StatusCode status = StatusCode::ok;
+    if(PEREGRINE_UNLIKELY(::peregrine::internal::fsync(fd) == -1)) {
+      status = errno_to_status();
+      PEREGRINE_LOG_ERROR("Failed to flush file : {}", status);
+    }
+    return status;
   }
 
 }; // class File

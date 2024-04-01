@@ -2,11 +2,26 @@
 
 #include <gtest/gtest.h>
 
-TEST(FileTest, OpenClose) {
-  using namespace std::string_view_literals;
+using namespace std::string_view_literals;
+static constexpr auto file_name = "./test_file.txt"sv;
 
-  constexpr auto file_name = "./test_file.txt"sv;
+// Test case setup and teardown
+class FileTest : public ::testing::Test {
+public:
 
+protected:
+  void SetUp() override {
+    peregrine::internal::reset_mocks();
+    unlink(file_name.data());
+  }
+
+  void TearDown() override {
+    peregrine::internal::reset_mocks();
+    unlink(file_name.data());
+  }
+}; // class FileTest
+
+TEST_F(FileTest, OpenClose) {
   peregrine::internal::File file;
   EXPECT_FALSE(file.is_open());
 
@@ -22,13 +37,9 @@ TEST(FileTest, OpenClose) {
   status = file.close();
   EXPECT_EQ(status, peregrine::StatusCode::ok);
   EXPECT_FALSE(file.is_open());
-
-  // Remove the file
-  rc = std::remove(file_name.data());
-  EXPECT_EQ(rc, 0);
 }
 
-TEST(FileTest, OpenError) {
+TEST_F(FileTest, OpenError) {
   using namespace std::string_view_literals;
 
   constexpr auto file_name = "/this/file/does/not/exist"sv;
@@ -41,7 +52,7 @@ TEST(FileTest, OpenError) {
   EXPECT_FALSE(file.is_open());
 }
 
-TEST(FileTest, CloseWhenNotOpen) {
+TEST_F(FileTest, CloseWhenNotOpen) {
   peregrine::internal::File file;
   EXPECT_FALSE(file.is_open());
 
@@ -50,11 +61,7 @@ TEST(FileTest, CloseWhenNotOpen) {
   EXPECT_FALSE(file.is_open());
 }
 
-TEST(FileTest, Stat) {
-  using namespace std::string_view_literals;
-
-  constexpr auto file_name = "./test_file.txt"sv;
-
+TEST_F(FileTest, Stat) {
   peregrine::internal::File file;
   EXPECT_FALSE(file.is_open());
 
@@ -77,18 +84,9 @@ TEST(FileTest, Stat) {
   status = file.close();
   EXPECT_EQ(status, peregrine::StatusCode::ok);
   EXPECT_FALSE(file.is_open());
-
-  // Remove the file
-  auto rc = std::remove(file_name.data());
-  EXPECT_EQ(rc, 0);
 }
 
-TEST(FileTest, StatError) {
-
-  using namespace std::string_view_literals;
-
-  constexpr auto file_name = "./test_file.txt"sv;
-
+TEST_F(FileTest, StatError) {
   peregrine::internal::File file;
   EXPECT_FALSE(file.is_open());
 
@@ -96,8 +94,8 @@ TEST(FileTest, StatError) {
   EXPECT_EQ(status, peregrine::StatusCode::ok);
   EXPECT_TRUE(file.is_open());
 
-  peregrine::internal::mock_fstat_return_value();
-  peregrine::internal::mock_errno_to_status_return_value(peregrine::StatusCode::eacces, 1);
+  peregrine::internal::fstat.mock_return_value();
+  peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::eacces, 1);
 
   struct stat st;
   status = file.stat(&st);
@@ -106,17 +104,9 @@ TEST(FileTest, StatError) {
   status = file.close();
   EXPECT_EQ(status, peregrine::StatusCode::ok);
   EXPECT_FALSE(file.is_open());
-
-  // Remove the file
-  auto rc = std::remove(file_name.data());
-  EXPECT_EQ(rc, 0);
 }
 
-TEST(FileTest, Move) {
-  using namespace std::string_view_literals;
-
-  constexpr auto file_name = "./test_file.txt"sv;
-
+TEST_F(FileTest, Move) {
   peregrine::internal::File file;
   EXPECT_FALSE(file.is_open());
 
@@ -134,16 +124,9 @@ TEST(FileTest, Move) {
   status = other.close();
   EXPECT_EQ(status, peregrine::StatusCode::ok);
   EXPECT_FALSE(other.is_open());
-
-  // Remove the file
-  auto rc = std::remove(file_name.data());
-  EXPECT_EQ(rc, 0);
 }
 
-TEST(FileTest, MoveCloseError) {
-  using namespace std::string_view_literals;
-
-  constexpr auto file_name       = "./test_file.txt"sv;
+TEST_F(FileTest, MoveCloseError) {
   constexpr auto other_file_name = "./test_other_file.txt"sv;
 
   peregrine::internal::File file;
@@ -158,14 +141,43 @@ TEST(FileTest, MoveCloseError) {
   other.open(other_file_name, O_CREAT | O_RDWR);
   EXPECT_EQ(status, peregrine::StatusCode::ok);
 
-  peregrine::internal::mock_close_return_value();
-  peregrine::internal::mock_errno_to_status_return_value(peregrine::StatusCode::ebadf, 1);
+  peregrine::internal::close.mock_return_value();
+  peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::ebadf, 1);
 
   other = std::move(file);
   EXPECT_FALSE(file.is_open());
   EXPECT_TRUE(other.is_open());
+}
 
-  // Remove the file
-  auto rc = std::remove(file_name.data());
-  EXPECT_EQ(rc, 0);
+TEST_F(FileTest, ReadWrite) {
+  peregrine::internal::File file;
+  EXPECT_FALSE(file.is_open());
+
+  auto open_status = file.open(file_name, O_CREAT | O_RDWR);
+  EXPECT_EQ(open_status, peregrine::StatusCode::ok);
+  EXPECT_TRUE(file.is_open());
+
+  constexpr auto data                = "Hello, World!"sv;
+  auto [bytes_written, write_status] = file.write(data.data(), data.size());
+  EXPECT_EQ(write_status, peregrine::StatusCode::ok);
+  EXPECT_EQ(bytes_written, data.size());
+
+  // Flush the data to disk
+  auto flush_status = file.flush();
+  EXPECT_EQ(flush_status, peregrine::StatusCode::ok);
+
+  // Seek to the beginning of the file
+  auto [seek_off, seek_status] = file.seek(0, SEEK_SET);
+  EXPECT_EQ(seek_status, peregrine::StatusCode::ok);
+  EXPECT_EQ(seek_off, 0);
+
+  std::string buffer(data.size(), '\0');
+  auto [bytes_read, read_status] = file.read(buffer.data(), buffer.size());
+  EXPECT_EQ(read_status, peregrine::StatusCode::ok);
+  EXPECT_EQ(bytes_read, data.size());
+  EXPECT_EQ(buffer, data.data());
+
+  auto close_status = file.close();
+  EXPECT_EQ(close_status, peregrine::StatusCode::ok);
+  EXPECT_FALSE(file.is_open());
 }
