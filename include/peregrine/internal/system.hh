@@ -4,283 +4,134 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <unistd.h>
+
+#if defined(PEREGRINE_MOCK_SYSTEM_CALLS)
+#include <mutex>
+#endif // defined(PEREGRINE_MOCK_SYSTEM_CALLS)
 
 #include "../status_code.hh"
 #include "common.hh"
+#include "type_traits.hh"
 
 namespace peregrine {
 namespace internal {
 
-#if !defined(PEREGRINE_MOCK_SYSTEM_CALLS)
+#if defined(PEREGRINE_MOCK_SYSTEM_CALLS)
 
-// Wrapper around the `open()` system call
-// - Parameters:
-//  - path: The path to the file to open.
-//  - flags: The flags to use when opening the file.
-//  - mode: The mode to use when opening the file.
-// - Returns: The file descriptor of the opened file, or -1 on error.
-inline int open(const char* path, int flags, mode_t mode) noexcept {
-  return ::open(path, flags, mode);
-}
+template <typename funcT>
+class MockSystemCall {
+  using result_t = typename function_traits<funcT>::return_type;
 
-// Wrapper around the `close()` system call
-// - Parameters:
-//  - fd: The file descriptor to close.
-// - Returns: 0 on success, -1 on error.
-inline int close(int fd) noexcept { return ::close(fd); }
+  funcT func;
+  std::string name;
+  result_t result;
+  result_t def_result;
+  int return_count{};
+  size_t call_count{};
+  mutable std::mutex mutex{};
 
-// Wrapper around the `fstat()` system call.
-// - Parameters:
-//  - fd: The file descriptor to get the status of.
-//  - buf: The buffer to store the status in.
-// - Returns: 0 on success, -1 on error.
-inline int fstat(int fd, struct stat* buf) noexcept { return ::fstat(fd, buf); }
+public:
+  MockSystemCall(funcT func, result_t result, std::string name) :
+      func{func}, result{result}, def_result{result} {}
 
-// Wrapper around the `read()` system call.
-// - Parameters:
-//  - fd: The file descriptor to read from.
-//  - buf: The buffer to read into.
-//  - count: The number of bytes to read.
-// - Returns: The number of bytes read, or -1 on error.
-inline ssize_t read(int fd, void* buf, size_t count) noexcept { return ::read(fd, buf, count); }
+  template <typename... argTs>
+  result_t operator()(argTs&&... args) noexcept {
+    std::lock_guard lock(mutex);
+    ++call_count;
+    if(return_count > 0) {
+      PEREGRINE_LOG_TRACE(
+          "Mock system call name={}, result={}, count={}", name, result, return_count);
+      --return_count;
+      return result;
+    }
 
-// Wrapper around the `write()` system call.
-// - Parameters:
-//  - fd: The file descriptor to write to.
-//  - buf: The buffer to write from.
-//  - count: The number of bytes to write.
-// - Returns: The number of bytes written, or -1 on error.
-inline ssize_t write(int fd, const void* buf, size_t count) noexcept {
-  return ::write(fd, buf, count);
-}
+    return func(std::forward<argTs>(args)...);
+  }
 
-// Wrapper around the `lseek()` system call.
-// - Parameters:
-//  - fd: The file descriptor to seek in.
-//  - offset: The offset to seek to.
-//  - whence: The origin of the seek.
-// - Returns: The new offset in the file, or -1 on error.
-inline off_t lseek(int fd, off_t offset, int whence) noexcept {
-  return ::lseek(fd, offset, whence);
-}
+  void mock_return_value(result_t result, int count) noexcept {
+    std::lock_guard lock(mutex);
+    this->result = result;
+    return_count = count;
+  }
 
-// Wrapper around the `dup()` system call.
-// - Parameters:
-//  - oldfd: The file descriptor to duplicate.
-// - Returns: The new file descriptor, or -1 on error.
-inline int dup(int oldfd) noexcept { return ::dup(oldfd); }
+  void mock_return_value() noexcept { mock_return_value(def_result, 1); }
 
-// Wrapper around the `mmap()` system call
-// - Parameters:
-//  - addr: The address to map the file to.
-//  - length: The length of the mapping.
-//  - prot: The protection flags for the mapping.
-//  - flags: The flags for the mapping.
-//  - fd: The file descriptor of the file to map.
-//  - offset: The offset in the file to start the mapping.
-// - Returns: The address of the mapping, or MAP_FAILED on error.
-inline void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset) {
-  return ::mmap(addr, length, prot, flags, fd, offset);
-}
+  size_t get_call_count() const noexcept {
+    std::lock_guard lock(mutex);
+    return call_count;
+  }
 
-// Wrapper around the `munmap()` system call.
-// - Parameters:
-//  - addr: The address of the mapping to unmap.
-//  - length: The length of the mapping.
-// - Returns: 0 on success, -1 on error.
-inline int munmap(void* addr, size_t length) { return ::munmap(addr, length); }
+  void reset() noexcept {
+    std::lock_guard lock(mutex);
+    result       = def_result;
+    return_count = 0;
+    call_count   = 0;
+  }
+}; // class MockSystemCall
 
-// Converts the current value of `errno` to a `StatusCode`.
-// - Returns: The `StatusCode` corresponding to the current value of `errno`.
-inline StatusCode errno_to_status() noexcept {
-  return static_cast<StatusCode>(static_cast<int32_t>(errno));
+#define PEREGRINE_MOCK_SYSTEM_CALL(func) extern MockSystemCall<decltype(&func)> func
+
+#else
+
+#define PEREGRINE_MOCK_SYSTEM_CALL(func)                                                           \
+  template <typename... argTs>                                                                     \
+  PEREGRINE_FORCE_INLINE auto func(argTs&&... args) noexcept                                       \
+      -> decltype(func(std::forward<argTs>(args)...)) {                                            \
+    return func(std::forward<argTs>(args)...);                                                     \
+  }
+
+#endif // !defined(PEREGRINE_MOCK_SYSTEM_CALLS)
+
+PEREGRINE_MOCK_SYSTEM_CALL(open);
+PEREGRINE_MOCK_SYSTEM_CALL(close);
+PEREGRINE_MOCK_SYSTEM_CALL(fstat);
+PEREGRINE_MOCK_SYSTEM_CALL(read);
+PEREGRINE_MOCK_SYSTEM_CALL(pread);
+PEREGRINE_MOCK_SYSTEM_CALL(readv);
+PEREGRINE_MOCK_SYSTEM_CALL(preadv);
+PEREGRINE_MOCK_SYSTEM_CALL(write);
+PEREGRINE_MOCK_SYSTEM_CALL(pwrite);
+PEREGRINE_MOCK_SYSTEM_CALL(writev);
+PEREGRINE_MOCK_SYSTEM_CALL(pwritev);
+PEREGRINE_MOCK_SYSTEM_CALL(lseek);
+PEREGRINE_MOCK_SYSTEM_CALL(dup);
+PEREGRINE_MOCK_SYSTEM_CALL(fsync);
+PEREGRINE_MOCK_SYSTEM_CALL(mmap);
+PEREGRINE_MOCK_SYSTEM_CALL(munmap);
+
+#if defined(PEREGRINE_MOCK_SYSTEM_CALLS)
+
+extern MockSystemCall<StatusCode (*)() noexcept> errno_to_status;
+
+// Resets all the mock system calls.
+inline void reset_mocks() {
+  ::peregrine::internal::open.reset();
+  ::peregrine::internal::close.reset();
+  ::peregrine::internal::fstat.reset();
+  ::peregrine::internal::read.reset();
+  ::peregrine::internal::pread.reset();
+  ::peregrine::internal::readv.reset();
+  ::peregrine::internal::preadv.reset();
+  ::peregrine::internal::write.reset();
+  ::peregrine::internal::pwrite.reset();
+  ::peregrine::internal::writev.reset();
+  ::peregrine::internal::pwritev.reset();
+  ::peregrine::internal::lseek.reset();
+  ::peregrine::internal::dup.reset();
+  ::peregrine::internal::mmap.reset();
+  ::peregrine::internal::munmap.reset();
+  ::peregrine::internal::errno_to_status.reset();
 }
 
 #else
 
-// Set the mock return value for `open()` system call
-// - Parameters:
-//  - result: The value to return when `open()` is called.
-//  - count: The number of times to return the value.
-void mock_open_return_value(int result = -1, int count = 1);
+PEREGRINE_FORCE_INLINE StatusCode errno_to_status() noexcept {
+  return static_cast<StatusCode>(static_cast<int32_t>(errno));
+}
 
-// Get the number of times `open()` was called.
-size_t mock_open_call_count();
-
-// Wrapper around the `open()` system call.
-//
-// This function is a wrapper around the `open()` system call. It is used to mock the system call
-// for testing purposes.
-// - Parameters:
-//  - path: The path to the file to open.
-//  - flags: The flags to use when opening the file.
-//  - mode: The mode to use when opening the file.
-// - Returns: The file descriptor of the opened file, or -1 on error.
-int open(const char* path, int flags, mode_t mode) noexcept;
-
-// Set the mock return value for `close()` system call
-// - Parameters:
-//  - result: The value to return when `close()` is called.
-//  - count: The number of times to return the value.
-void mock_close_return_value(int result = -1, int count = 1);
-
-// Get the number of times `close()` was called.
-size_t mock_close_call_count();
-
-// Mock the `close()` system call.
-//
-// This function is used to mock the `close()` system call for testing purposes.
-// - Parameters:
-//  - fd: The file descriptor to close.
-// - Returns: 0 on success, -1 on error.
-int close(int fd) noexcept;
-
-// Set the mock return value for `fstat()` system call
-//
-// This function is used to mock the return value of the `fstat()` system call for testing purposes.
-// - Parameters:
-//  - result: The value to return when `fstat()` is called.
-//  - count: The number of times to return the value.
-void mock_fstat_return_value(int result = -1, int count = 1);
-
-// Get the number of times `fstat()` was called.
-size_t mock_fstat_call_count();
-
-// Mock the `fstat()` system call.
-//
-// This function is used to mock the `fstat()` system call for testing purposes.
-// - Parameters:
-//  - fd: The file descriptor to get the status of.
-//  - buf: The buffer to store the status in.
-// - Returns: 0 on success, -1 on error.
-int fstat(int fd, struct stat* buf) noexcept;
-
-// Set the mock return value for `read()` system call
-//
-// This function is used to mock the return value of the `read()` system call for testing purposes.
-// - Parameters:
-//  - result: The value to return when `read()` is called.
-//  - count: The number of times to return the value.
-void mock_read_return_value(int result = -1, int count = 1);
-
-// Get the number of times `read()` was called.
-size_t mock_read_call_count();
-
-// Wrapper around the `read()` system call.
-// - Parameters:
-//  - fd: The file descriptor to read from.
-//  - buf: The buffer to read into.
-//  - count: The number of bytes to read.
-// - Returns: The number of bytes read, or -1 on error.
-ssize_t read(int fd, void* buf, size_t count) noexcept;
-
-// Set the mock return value for `write()` system call
-//
-// This function is used to mock the return value of the `write()` system call for testing purposes.
-// - Parameters:
-//  - result: The value to return when `write()` is called.
-//  - count: The number of times to return the value.
-void mock_write_return_value(int result = -1, int count = 1);
-
-// Get the number of times `write()` was called.
-size_t mock_write_call_count();
-
-// Wrapper around the `write()` system call.
-// - Parameters:
-//  - fd: The file descriptor to write to.
-//  - buf: The buffer to write from.
-//  - count: The number of bytes to write.
-// - Returns: The number of bytes written, or -1 on error.
-ssize_t write(int fd, const void* buf, size_t count) noexcept;
-
-void mock_lseek_return_value(off_t result = -1, int count = 1);
-
-// Get the number of times `lseek()` was called.
-size_t mock_lseek_call_count();
-
-// Wrapper around the `lseek()` system call.
-// - Parameters:
-//  - fd: The file descriptor to seek in.
-//  - offset: The offset to seek to.
-//  - whence: The origin of the seek.
-// - Returns: The new offset in the file, or -1 on error.
-off_t lseek(int fd, off_t offset, int whence) noexcept;
-
-void mock_dup_return_value(int result = -1, int count = 1);
-
-// Get the number of times `dup()` was called.
-size_t mock_dup_call_count();
-
-// Wrapper around the `dup()` system call.
-// - Parameters:
-//  - oldfd: The file descriptor to duplicate.
-// - Returns: The new file descriptor, or -1 on error.
-int dup(int oldfd) noexcept;
-
-// Set the mock return value for `mmap()` system call
-// - Parameters:
-//  - value: The value to return when `mmap()` is called. Typically this is `MAP_FAILED`.
-//  - count: The number of times to return the value.
-void mock_mmap_return_value(void* result = MAP_FAILED, int count = 1);
-
-// Get the number of times `mmap()` was called.
-size_t mock_mmap_call_count();
-
-// Wrapper around the `mmap()` system call.
-//
-// This function is a wrapper around the `mmap()` system call. It is used to mock the system call
-// for testing purposes.
-// - Parameters:
-//  - addr: The address to map the file to.
-//  - length: The length of the mapping.
-//  - prot: The protection flags for the mapping.
-//  - flags: The flags for the mapping.
-//  - fd: The file descriptor of the file to map.
-//  - offset: The offset in the file to start the mapping.
-// - Returns: The address of the mapping, or MAP_FAILED on error.
-void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset) noexcept;
-
-// Set the mock return value for `munmap()` system call
-//
-// This function is used to mock the return value of the `munmap()` system call for testing
-// purposes.
-// - Parameters:
-//  - result: The value to return when `munmap()` is called.
-//  - count: The number of times to return the value.
-void mock_munmap_return_value(int result = -1, int count = 1);
-
-// Get the number of times `munmap()` was called.
-size_t mock_munmap_call_count();
-
-// Mock the `munmap()` system call.
-//
-// This function is used to mock the `munmap()` system call for testing purposes.
-// - Parameters:
-//  - addr: The address of the mapping to unmap.
-//  - length: The length of the mapping.
-// - Returns: 0 on success, -1 on error.
-int munmap(void* addr, size_t length) noexcept;
-
-// Set the mock return value for `errno_to_status()` function.
-//
-// This function is used to mock the return value of the `errno_to_status()` function for testing
-// purposes. It should be called in conjunction with other system call mocking functions.
-// - Parameters:
-//  - result: The value to return when `errno_to_status()` is called.
-//  - count: The number of times to return the value.
-void mock_errno_to_status_return_value(StatusCode result, int count = 1);
-
-// Get the number of times `errno_to_status()` was called.
-size_t mock_errno_to_status_call_count();
-
-// Mock the `errno_to_status()` function.
-//
-// This function is used to mock the `errno_to_status()` function for testing purposes.
-// - Returns: The `StatusCode` corresponding to the current value of `errno`.
-StatusCode errno_to_status() noexcept;
-
-#endif // !defined(PEREGRINE_MOCK_SYSTEM_CALLS)
+#endif // defined(PEREGRINE_MOCK_SYSTEM_CALLS)
 
 } // namespace internal
 } // namespace peregrine

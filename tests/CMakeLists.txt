@@ -27,3 +27,9 @@ add_custom_target(
   COMMAND peregrine_test
   DEPENDS peregrine_test
 )
+
+set_target_properties(
+  peregrine_test check
+  PROPERTIES
+  EXCLUDE_FROM_ALL TRUE
+)
