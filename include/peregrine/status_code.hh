@@ -9,8 +9,8 @@ namespace peregrine {
 
 enum StatusCode : int32_t {
   ok               = 0,  // No error
-  already_open     = -1, // File is already open
-  not_open         = -2, // File is not open
+  already_open     = -1, // Object is already open
+  not_open         = -2, // Object is not open
   invalid_argument = -3, // Invalid argument
 
   // Error that corresponds to errno values
