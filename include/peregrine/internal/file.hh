@@ -23,6 +23,26 @@ class File {
 
   friend class MmapFile;
 
+  template <typename T>
+  static StatusCode handler(T rc, std::string_view fn) noexcept {
+    StatusCode status = StatusCode::ok;
+    if(PEREGRINE_UNLIKELY(rc == T(-1))) {
+      status = errno_to_status();
+      PEREGRINE_LOG_ERROR("File {} failed : {}"sv, fn, status);
+    }
+    return status;
+  }
+
+  template <typename T>
+  static std::tuple<T, StatusCode> handler2(T rc, std::string_view fn) noexcept {
+    StatusCode status = StatusCode::ok;
+    if(PEREGRINE_UNLIKELY(rc == T(-1))) {
+      status = errno_to_status();
+      PEREGRINE_LOG_ERROR("File {} failed : {}"sv, fn, status);
+    }
+    return {rc, status};
+  }
+
 public:
   /**
    * @brief The default file flags for opening a file.
@@ -150,13 +170,7 @@ public:
    * @return `StatusCode::ok` on success, otherwise an error code.
    */
   StatusCode stat(struct stat* buf) const noexcept {
-    StatusCode status = StatusCode::ok;
-
-    if(auto rc = ::peregrine::internal::fstat(fd, buf); PEREGRINE_UNLIKELY(rc != 0)) {
-      status = errno_to_status();
-      PEREGRINE_LOG_ERROR("Failed to get file status : {}", status);
-    }
-    return status;
+    return handler(::peregrine::internal::fstat(fd, buf), "fstat"sv);
   }
 
   /**
@@ -170,10 +184,7 @@ public:
    * @return A tuple containing the number of bytes read and the status code.
    */
   std::tuple<ssize_t, StatusCode> read(void* buf, size_t count) const noexcept {
-    auto rc           = ::peregrine::internal::read(fd, buf, count);
-    StatusCode status = StatusCode::ok;
-    if(PEREGRINE_UNLIKELY(rc == -1)) status = errno_to_status();
-    return {rc, status};
+    return handler2(::peregrine::internal::read(fd, buf, count), "read"sv);
   }
 
   /**
@@ -188,10 +199,7 @@ public:
    * @return A tuple containing the number of bytes read and the status code.
    */
   std::tuple<ssize_t, StatusCode> pread(void* buf, size_t count, off_t offset) const noexcept {
-    auto rc           = ::peregrine::internal::pread(fd, buf, count, offset);
-    StatusCode status = StatusCode::ok;
-    if(PEREGRINE_UNLIKELY(rc == -1)) status = errno_to_status();
-    return {rc, status};
+    return handler2(::peregrine::internal::pread(fd, buf, count, offset), "pread"sv);
   }
 
   /**
@@ -206,10 +214,7 @@ public:
    * @return A tuple containing the number of bytes read and the status code.
    */
   std::tuple<ssize_t, StatusCode> readv(const struct iovec* iov, int iovcnt) const noexcept {
-    auto rc           = ::peregrine::internal::readv(fd, iov, iovcnt);
-    StatusCode status = StatusCode::ok;
-    if(PEREGRINE_UNLIKELY(rc == -1)) status = errno_to_status();
-    return {rc, status};
+    return handler2(::peregrine::internal::readv(fd, iov, iovcnt), "readv"sv);
   }
 
   /**
@@ -226,10 +231,7 @@ public:
    */
   std::tuple<ssize_t, StatusCode> preadv(
       const struct iovec* iov, int iovcnt, off_t offset) const noexcept {
-    auto rc           = ::peregrine::internal::preadv(fd, iov, iovcnt, offset);
-    StatusCode status = StatusCode::ok;
-    if(PEREGRINE_UNLIKELY(rc == -1)) status = errno_to_status();
-    return {rc, status};
+    return handler2(::peregrine::internal::preadv(fd, iov, iovcnt, offset), "preadv"sv);
   }
 
   /**
@@ -242,13 +244,7 @@ public:
    * @return A tuple containing the number of bytes written and the status code.
    */
   std::tuple<ssize_t, StatusCode> write(const void* buf, size_t count) const noexcept {
-    auto rc           = ::peregrine::internal::write(fd, buf, count);
-    StatusCode status = StatusCode::ok;
-    if(PEREGRINE_UNLIKELY(rc == -1)) {
-      status = errno_to_status();
-      PEREGRINE_LOG_ERROR("Failed to write file : {}", status);
-    }
-    return {rc, status};
+    return handler2(::peregrine::internal::write(fd, buf, count), "write"sv);
   }
 
   /**
@@ -263,13 +259,7 @@ public:
    */
   std::tuple<ssize_t, StatusCode> pwrite(
       const void* buf, size_t count, off_t offset) const noexcept {
-    auto rc           = ::peregrine::internal::pwrite(fd, buf, count, offset);
-    StatusCode status = StatusCode::ok;
-    if(PEREGRINE_UNLIKELY(rc == -1)) {
-      status = errno_to_status();
-      PEREGRINE_LOG_ERROR("Failed to write file : {}", status);
-    }
-    return {rc, status};
+    return handler2(::peregrine::internal::pwrite(fd, buf, count, offset), "pwrite"sv);
   }
 
   /**
@@ -283,13 +273,7 @@ public:
    * @return A tuple containing the number of bytes written and the status code.
    */
   std::tuple<ssize_t, StatusCode> writev(const struct iovec* iov, int iovcnt) const noexcept {
-    auto rc           = ::peregrine::internal::writev(fd, iov, iovcnt);
-    StatusCode status = StatusCode::ok;
-    if(PEREGRINE_UNLIKELY(rc == -1)) {
-      status = errno_to_status();
-      PEREGRINE_LOG_ERROR("Failed to write file : {}", status);
-    }
-    return {rc, status};
+    return handler2(::peregrine::internal::writev(fd, iov, iovcnt), "writev"sv);
   }
 
   /**
@@ -305,13 +289,7 @@ public:
    */
   std::tuple<ssize_t, StatusCode> pwritev(
       const struct iovec* iov, int iovcnt, off_t offset) const noexcept {
-    auto rc           = ::peregrine::internal::pwritev(fd, iov, iovcnt, offset);
-    StatusCode status = StatusCode::ok;
-    if(PEREGRINE_UNLIKELY(rc == -1)) {
-      status = errno_to_status();
-      PEREGRINE_LOG_ERROR("Failed to write file : {}", status);
-    }
-    return {rc, status};
+    return handler2(::peregrine::internal::pwritev(fd, iov, iovcnt, offset), "pwritev"sv);
   }
 
   /**
@@ -324,13 +302,7 @@ public:
    * @return The new file offset on success, otherwise -1.
    */
   std::tuple<off_t, StatusCode> seek(off_t offset, int whence) noexcept {
-    off_t rc          = ::peregrine::internal::lseek(fd, offset, whence);
-    StatusCode status = StatusCode::ok;
-    if(PEREGRINE_UNLIKELY(rc == -1)) {
-      auto status = errno_to_status();
-      PEREGRINE_LOG_ERROR("Failed to seek file : {}", status);
-    }
-    return {rc, status};
+    return handler2(::peregrine::internal::lseek(fd, offset, whence), "lseek"sv);
   }
 
   /** @brief Duplicate the file
@@ -357,14 +329,7 @@ public:
    *
    * @return `StatusCode::ok` on success, otherwise an error code.
    */
-  StatusCode flush() const noexcept {
-    StatusCode status = StatusCode::ok;
-    if(PEREGRINE_UNLIKELY(::peregrine::internal::fsync(fd) == -1)) {
-      status = errno_to_status();
-      PEREGRINE_LOG_ERROR("Failed to flush file : {}", status);
-    }
-    return status;
-  }
+  StatusCode flush() const noexcept { return handler(::peregrine::internal::fsync(fd), "fsync"sv); }
 
 }; // class File
 
