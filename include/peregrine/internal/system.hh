@@ -34,7 +34,7 @@ class MockSystemCall {
 
 public:
   MockSystemCall(funcT func, result_t result, std::string name) :
-      func{func}, result{result}, def_result{result} {}
+      func{func}, name{std::move(name)}, result{result}, def_result{result} {}
 
   template <typename... argTs>
   result_t operator()(argTs&&... args) noexcept {
@@ -100,6 +100,7 @@ PEREGRINE_MOCK_SYSTEM_CALL(dup);
 PEREGRINE_MOCK_SYSTEM_CALL(fsync);
 PEREGRINE_MOCK_SYSTEM_CALL(mmap);
 PEREGRINE_MOCK_SYSTEM_CALL(munmap);
+PEREGRINE_MOCK_SYSTEM_CALL(fcntl);
 
 #if defined(PEREGRINE_MOCK_SYSTEM_CALLS)
 
@@ -122,6 +123,7 @@ inline void reset_mocks() {
   ::peregrine::internal::dup.reset();
   ::peregrine::internal::mmap.reset();
   ::peregrine::internal::munmap.reset();
+  ::peregrine::internal::fcntl.reset();
   ::peregrine::internal::errno_to_status.reset();
 }
 

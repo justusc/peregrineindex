@@ -28,6 +28,7 @@ PEREGRINE_MOCK_SYSTEM_CALL_IMPL(dup, -1);
 PEREGRINE_MOCK_SYSTEM_CALL_IMPL(fsync, -1);
 PEREGRINE_MOCK_SYSTEM_CALL_IMPL(mmap, MAP_FAILED);
 PEREGRINE_MOCK_SYSTEM_CALL_IMPL(munmap, -1);
+PEREGRINE_MOCK_SYSTEM_CALL_IMPL(fcntl, -1);
 
 // Do some special handling for errno_to_status since it is not a system call.
 namespace {
