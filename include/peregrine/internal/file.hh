@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/param.h>
+
 #include "../status_code.hh"
 #include "common.hh"
 #include "log.hh"
@@ -23,32 +25,32 @@ class File {
 
   friend class MmapFile;
 
+  std::string path_from_fd() const {
+    char buf[MAXPATHLEN];
+    buf[0]  = '\0';
+    auto rc = ::peregrine::internal::fcntl(fd, F_GETPATH, buf);
+    if(rc == -1) { return fmt::format("fd={}"sv, fd); }
+    return {buf};
+  }
+
   template <typename T>
-  static StatusCode handler(T rc, std::string_view fn) noexcept {
+  StatusCode handler(T rc, std::string_view fn) const noexcept {
     StatusCode status = StatusCode::ok;
     if(PEREGRINE_UNLIKELY(rc == T(-1))) {
       status = errno_to_status();
-      PEREGRINE_LOG_ERROR("File {} failed : {}"sv, fn, status);
+      PEREGRINE_LOG_ERROR("{} failed for \"{}\" : {}"sv, fn, path_from_fd(), status);
     }
     return status;
   }
 
   template <typename T>
-  static std::tuple<T, StatusCode> handler2(T rc, std::string_view fn) noexcept {
+  std::tuple<T, StatusCode> handler2(T rc, std::string_view fn) const noexcept {
     StatusCode status = StatusCode::ok;
     if(PEREGRINE_UNLIKELY(rc == T(-1))) {
       status = errno_to_status();
-      PEREGRINE_LOG_ERROR("File {} failed : {}"sv, fn, status);
+      PEREGRINE_LOG_ERROR("{} failed for \"{}\" : {}"sv, fn, path_from_fd(), status);
     }
     return {rc, status};
-  }
-
-  std::string path_from_fd() const {
-    char buf[PATH_MAX];
-    auto rc = ::peregrine::internal::fcntl(fd, F_GETPATH, buf);
-    if(rc == -1) { return fmt::format("fd={}"sv, fd); }
-    buf[rc] = '\0';
-    return buf;
   }
 
 public:
@@ -142,7 +144,13 @@ public:
     }
 
     PEREGRINE_LOG_TRACE("Opening file: path={}, flags={}, mode={}"sv, path, flags, mode);
-    int new_fd = ::peregrine::internal::open(path.data(), flags, mode);
+
+    // Copy the path to a null-terminated string
+    char* path_cstr = static_cast<char*>(alloca(path.size() + 1));
+    std::memcpy(path_cstr, path.data(), path.size());
+    path_cstr[path.size()] = '\0';
+
+    int new_fd = ::peregrine::internal::open(path_cstr, flags, mode);
     if(PEREGRINE_LIKELY(new_fd != -1)) {
       fd = new_fd;
     } else {
@@ -162,7 +170,7 @@ public:
     StatusCode status = StatusCode::ok;
 
     // Only close the file if it is open
-    if(fd == -1) return status;
+    if(!is_open()) return status;
 
     PEREGRINE_LOG_TRACE("Closing file : {}"sv, path_from_fd());
 
@@ -337,16 +345,11 @@ public:
     File file;
     StatusCode status = StatusCode::ok;
 
-    if(PEREGRINE_LIKELY(is_open())) {
-      PEREGRINE_LOG_TRACE("Duplicating file : {}"sv, path_from_fd());
-      file.fd = ::peregrine::internal::dup(fd);
-      if(PEREGRINE_UNLIKELY(file.fd == -1)) {
-        status = errno_to_status();
-        PEREGRINE_LOG_ERROR("Failed to duplicate file : {}"sv, status);
-      }
-    } else {
-      status = StatusCode::not_open;
-      PEREGRINE_LOG_ERROR("Failed duplicating file : {}"sv, status);
+    PEREGRINE_LOG_TRACE("Duplicating file : {}"sv, path_from_fd());
+    file.fd = ::peregrine::internal::dup(fd);
+    if(PEREGRINE_UNLIKELY(file.fd == -1)) {
+      status = errno_to_status();
+      PEREGRINE_LOG_ERROR("dup failed for \"{}\" : {}"sv, path_from_fd(), status);
     }
 
     return {std::move(file), status};

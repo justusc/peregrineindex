@@ -215,52 +215,27 @@ TEST_F(FileTest, ReadWrite) {
   EXPECT_EQ(bytes_read, data.size());
   EXPECT_EQ(buffer, data.data());
 
-  auto close_status = file.close();
-  EXPECT_EQ(close_status, peregrine::StatusCode::ok);
-  EXPECT_FALSE(file.is_open());
-}
+  // Test write error handler
+  {
+    peregrine::internal::write.mock_return_value();
+    peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::eacces, 1);
 
-TEST_F(FileTest, WriteError) {
-  peregrine::internal::File file;
-  EXPECT_FALSE(file.is_open());
+    constexpr auto data                = "Hello, World!"sv;
+    auto [bytes_written, write_status] = file.write(data.data(), data.size());
+    EXPECT_EQ(write_status, peregrine::StatusCode::eacces);
+    EXPECT_EQ(bytes_written, -1);
+  }
 
-  auto open_status = file.open(file_name, O_CREAT | O_RDWR);
-  EXPECT_EQ(open_status, peregrine::StatusCode::ok);
-  EXPECT_TRUE(file.is_open());
+  // Test read error handler
+  {
+    peregrine::internal::read.mock_return_value();
+    peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::eacces, 1);
 
-  constexpr auto data = "Hello, World!"sv;
-  peregrine::internal::write.mock_return_value();
-  peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::eacces, 1);
-
-  auto [bytes_written, write_status] = file.write(data.data(), data.size());
-  EXPECT_EQ(write_status, peregrine::StatusCode::eacces);
-  EXPECT_EQ(bytes_written, -1);
-
-  auto close_status = file.close();
-  EXPECT_EQ(close_status, peregrine::StatusCode::ok);
-  EXPECT_FALSE(file.is_open());
-}
-
-TEST_F(FileTest, ReadError) {
-  peregrine::internal::File file;
-  EXPECT_FALSE(file.is_open());
-
-  auto open_status = file.open(file_name, O_CREAT | O_RDWR);
-  EXPECT_EQ(open_status, peregrine::StatusCode::ok);
-  EXPECT_TRUE(file.is_open());
-
-  constexpr auto data                = "Hello, World!"sv;
-  auto [bytes_written, write_status] = file.write(data.data(), data.size());
-  EXPECT_EQ(write_status, peregrine::StatusCode::ok);
-  EXPECT_EQ(bytes_written, data.size());
-
-  std::string buffer(data.size(), '\0');
-  peregrine::internal::read.mock_return_value();
-  peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::eacces, 1);
-
-  auto [bytes_read, read_status] = file.read(buffer.data(), buffer.size());
-  EXPECT_EQ(read_status, peregrine::StatusCode::eacces);
-  EXPECT_EQ(bytes_read, -1);
+    std::string buffer(data.size(), '\0');
+    auto [bytes_read, read_status] = file.read(buffer.data(), buffer.size());
+    EXPECT_EQ(read_status, peregrine::StatusCode::eacces);
+    EXPECT_EQ(bytes_read, -1);
+  }
 
   auto close_status = file.close();
   EXPECT_EQ(close_status, peregrine::StatusCode::ok);
@@ -296,12 +271,34 @@ TEST_F(FileTest, PreadPWrite) {
   EXPECT_EQ(bytes_read, expected_data.size());
   EXPECT_EQ(buffer, expected_data.data());
 
+  // Test pwrite error handler
+  {
+    peregrine::internal::pwrite.mock_return_value();
+    peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::eacces, 1);
+
+    constexpr auto data                = "Hello, World!"sv;
+    auto [bytes_written, write_status] = file.pwrite(data.data(), data.size(), 0);
+    EXPECT_EQ(write_status, peregrine::StatusCode::eacces);
+    EXPECT_EQ(bytes_written, -1);
+  }
+
+  // Test pread error handler
+  {
+    peregrine::internal::pread.mock_return_value();
+    peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::eacces, 1);
+
+    std::string buffer(2, '\0');
+    auto [bytes_read, read_status] = file.pread(buffer.data(), 2, 0);
+    EXPECT_EQ(read_status, peregrine::StatusCode::eacces);
+    EXPECT_EQ(bytes_read, -1);
+  }
+
   auto close_status = file.close();
   EXPECT_EQ(close_status, peregrine::StatusCode::ok);
   EXPECT_FALSE(file.is_open());
 }
 
-TEST_F(FileTest, PreadPWriteError) {
+TEST_F(FileTest, ReadvWritev) {
   peregrine::internal::File file;
   EXPECT_FALSE(file.is_open());
 
@@ -309,13 +306,136 @@ TEST_F(FileTest, PreadPWriteError) {
   EXPECT_EQ(open_status, peregrine::StatusCode::ok);
   EXPECT_TRUE(file.is_open());
 
-  peregrine::internal::pwrite.mock_return_value();
-  peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::eacces, 1);
+  constexpr auto data = "Hello, World!"sv;
+  {
+    struct iovec wiov[2] = {
+        {    .iov_base = const_cast<char*>(data.data()), .iov_len = 6},
+        {.iov_base = const_cast<char*>(data.data() + 6), .iov_len = 7}
+    };
 
-  constexpr auto data                = "Hello, World!"sv;
-  auto [bytes_written, write_status] = file.pwrite(data.data(), data.size(), 0);
-  EXPECT_EQ(write_status, peregrine::StatusCode::eacces);
-  EXPECT_EQ(bytes_written, -1);
+    auto [bytes_written, write_status] = file.writev(wiov, 2);
+    EXPECT_EQ(write_status, peregrine::StatusCode::ok);
+    EXPECT_EQ(bytes_written, data.size());
+  }
+
+  // Flush the data to disk
+  {
+    auto flush_status = file.flush();
+    EXPECT_EQ(flush_status, peregrine::StatusCode::ok);
+  }
+
+  // Test write error handler
+  {
+    peregrine::internal::writev.mock_return_value();
+    peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::eacces, 1);
+
+    constexpr auto data  = "Hello, World!"sv;
+    struct iovec wiov[2] = {
+        {    .iov_base = const_cast<char*>(data.data()), .iov_len = 6},
+        {.iov_base = const_cast<char*>(data.data() + 6), .iov_len = 7}
+    };
+
+    auto [bytes_written, write_status] = file.writev(wiov, 2);
+    EXPECT_EQ(write_status, peregrine::StatusCode::eacces);
+    EXPECT_EQ(bytes_written, -1);
+  }
+
+  // read the data back
+  char buffer[13]      = {0};
+  struct iovec riov[2] = {
+      {    .iov_base = buffer, .iov_len = 6},
+      {.iov_base = buffer + 6, .iov_len = 7}
+  };
+  {
+    // Seek to the beginning of the file
+    auto [seek_off, seek_status] = file.seek(0, SEEK_SET);
+    EXPECT_EQ(seek_status, peregrine::StatusCode::ok);
+    EXPECT_EQ(seek_off, 0);
+
+    auto [bytes_read, read_status] = file.readv(riov, 2);
+    EXPECT_EQ(read_status, peregrine::StatusCode::ok);
+    EXPECT_EQ(bytes_read, data.size());
+    EXPECT_EQ(std::string_view(buffer, 13), data);
+  }
+
+  // Test readv error handler
+  {
+    peregrine::internal::readv.mock_return_value();
+    peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::eacces, 1);
+
+    // Seek to the beginning of the file
+    auto [seek_off, seek_status] = file.seek(0, SEEK_SET);
+    EXPECT_EQ(seek_status, peregrine::StatusCode::ok);
+    EXPECT_EQ(seek_off, 0);
+
+    auto [bytes_read, read_status] = file.readv(riov, 2);
+    EXPECT_EQ(read_status, peregrine::StatusCode::eacces);
+    EXPECT_EQ(bytes_read, -1);
+  }
+
+  auto close_status = file.close();
+  EXPECT_EQ(close_status, peregrine::StatusCode::ok);
+  EXPECT_FALSE(file.is_open());
+}
+
+TEST_F(FileTest, PreadvPwritev) {
+  peregrine::internal::File file;
+  EXPECT_FALSE(file.is_open());
+
+  auto open_status = file.open(file_name, O_CREAT | O_RDWR);
+  EXPECT_EQ(open_status, peregrine::StatusCode::ok);
+  EXPECT_TRUE(file.is_open());
+
+  constexpr auto data  = "Hello, World!"sv;
+  struct iovec wiov[2] = {
+      {    .iov_base = const_cast<char*>(data.data()), .iov_len = 6},
+      {.iov_base = const_cast<char*>(data.data() + 6), .iov_len = 7}
+  };
+
+  // Write the data to the file
+  {
+    auto [bytes_written, write_status] = file.pwritev(wiov, 2, 0);
+    EXPECT_EQ(write_status, peregrine::StatusCode::ok);
+    EXPECT_EQ(bytes_written, data.size());
+  }
+
+  // Flush the data to disk
+  auto flush_status = file.flush();
+  EXPECT_EQ(flush_status, peregrine::StatusCode::ok);
+
+  char buffer[13]      = {0};
+  struct iovec riov[2] = {
+      {    .iov_base = buffer, .iov_len = 6},
+      {.iov_base = buffer + 6, .iov_len = 7}
+  };
+
+  // Read the data back
+  {
+    auto [bytes_read, read_status] = file.preadv(riov, 2, 0);
+    EXPECT_EQ(read_status, peregrine::StatusCode::ok);
+    EXPECT_EQ(bytes_read, data.size());
+    EXPECT_EQ(std::string_view(buffer, 13), data);
+  }
+
+  // Test preadv error handler
+  {
+    peregrine::internal::preadv.mock_return_value();
+    peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::eacces, 1);
+
+    auto [bytes_read, read_status] = file.preadv(riov, 2, 0);
+    EXPECT_EQ(read_status, peregrine::StatusCode::eacces);
+    EXPECT_EQ(bytes_read, -1);
+  }
+
+  // Test pwritev error handler
+  {
+    peregrine::internal::pwritev.mock_return_value();
+    peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::eacces, 1);
+
+    auto [bytes_written, write_status] = file.pwritev(wiov, 2, 13);
+    EXPECT_EQ(write_status, peregrine::StatusCode::eacces);
+    EXPECT_EQ(bytes_written, -1);
+  }
 
   auto close_status = file.close();
   EXPECT_EQ(close_status, peregrine::StatusCode::ok);
@@ -432,6 +552,56 @@ TEST_F(FileTest, FlushError) {
 
   auto flush_status = file.flush();
   EXPECT_EQ(flush_status, peregrine::StatusCode::eacces);
+
+  auto close_status = file.close();
+  EXPECT_EQ(close_status, peregrine::StatusCode::ok);
+  EXPECT_FALSE(file.is_open());
+}
+
+TEST_F(FileTest, Dup) {
+  peregrine::internal::File file;
+  EXPECT_FALSE(file.is_open());
+
+  auto open_status = file.open(file_name, O_CREAT | O_RDWR);
+  EXPECT_EQ(open_status, peregrine::StatusCode::ok);
+  EXPECT_TRUE(file.is_open());
+
+  auto [dup_file, dup_status] = file.dup();
+  EXPECT_TRUE(dup_file.is_open());
+  EXPECT_EQ(dup_status, peregrine::StatusCode::ok);
+
+  auto close_status = file.close();
+  EXPECT_EQ(close_status, peregrine::StatusCode::ok);
+  EXPECT_FALSE(file.is_open());
+
+  EXPECT_TRUE(dup_file.is_open());
+
+  auto close_status2 = dup_file.close();
+  EXPECT_EQ(close_status2, peregrine::StatusCode::ok);
+  EXPECT_FALSE(dup_file.is_open());
+}
+
+TEST_F(FileTest, DupError) {
+  peregrine::internal::File file;
+  EXPECT_FALSE(file.is_open());
+
+  // Test dup with an unopened file
+  {
+    auto [dup_file, status] = file.dup();
+    EXPECT_FALSE(dup_file.is_open());
+    EXPECT_EQ(status, peregrine::StatusCode::ebadf);
+  }
+
+  auto open_status = file.open(file_name, O_CREAT | O_RDWR);
+  EXPECT_EQ(open_status, peregrine::StatusCode::ok);
+  EXPECT_TRUE(file.is_open());
+
+  peregrine::internal::dup.mock_return_value();
+  peregrine::internal::errno_to_status.mock_return_value(peregrine::StatusCode::eacces, 1);
+
+  auto [dup_file, dup_status] = file.dup();
+  EXPECT_FALSE(dup_file.is_open());
+  EXPECT_EQ(dup_status, peregrine::StatusCode::eacces);
 
   auto close_status = file.close();
   EXPECT_EQ(close_status, peregrine::StatusCode::ok);
