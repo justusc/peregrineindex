@@ -62,6 +62,7 @@ endif()
 
 # Add source code paths
 include_directories(include)
+add_subdirectory(external)
 add_subdirectory(src)
 
 # Testing setup
